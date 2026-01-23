@@ -4,6 +4,8 @@ SQLite 数据库操作
 """
 import aiosqlite
 import json
+import os
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional, Dict, List
 from backend.config import settings
@@ -16,9 +18,33 @@ async def get_db():
     Returns:
         数据库连接对象
     """
-    db = await aiosqlite.connect(settings.SQLITE_DB_PATH)
+    # 确保数据目录存在
+    db_path = settings.SQLITE_DB_PATH
+    db_dir = os.path.dirname(db_path)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
+    
+    db = await aiosqlite.connect(db_path)
     db.row_factory = aiosqlite.Row
     return db
+
+
+@asynccontextmanager
+async def get_db_connection():
+    """
+    数据库连接上下文管理器
+    自动管理连接的打开和关闭
+    
+    Usage:
+        async with get_db_connection() as db:
+            # 使用 db 进行数据库操作
+            user = await get_user_by_username(db, "username")
+    """
+    db = await get_db()
+    try:
+        yield db
+    finally:
+        await db.close()
 
 
 async def init_db():
@@ -97,6 +123,30 @@ async def get_user_by_username(
     cursor = await db.execute(
         "SELECT * FROM users WHERE username = ?",
         (username,)
+    )
+    row = await cursor.fetchone()
+    if row:
+        return dict(row)
+    return None
+
+
+async def get_user_by_email(
+    db: aiosqlite.Connection,
+    email: str
+) -> Optional[Dict]:
+    """
+    根据邮箱获取用户
+    
+    Args:
+        db: 数据库连接
+        email: 邮箱
+        
+    Returns:
+        用户信息字典，如果不存在则返回 None
+    """
+    cursor = await db.execute(
+        "SELECT * FROM users WHERE email = ?",
+        (email,)
     )
     row = await cursor.fetchone()
     if row:
