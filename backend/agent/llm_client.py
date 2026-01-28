@@ -74,6 +74,42 @@ class ModelScopeLLMClient:
             logger.error(f"LLM API 调用失败: {str(e)}", exc_info=True)
             raise RuntimeError(f"LLM API 调用失败: {str(e)}") from e
     
+    async def astream(self, prompt: str):
+        """
+        异步流式生成文本
+        
+        Args:
+            prompt: 输入提示词
+        
+        Yields:
+            每次产生一小段新增文本
+        """
+        logger.info(f"调用 ModelScope API（stream）: model={self.model_name}")
+        try:
+            stream = await self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt,
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=2000,
+                stream=True,
+                extra_body={
+                    "enable_thinking": False,
+                },
+            )
+            async for chunk in stream:
+                delta = chunk.choices[0].delta
+                text = getattr(delta, "content", None)
+                if text:
+                    yield text
+        except Exception as e:
+            logger.error(f"LLM 流式 API 调用失败: {str(e)}", exc_info=True)
+            raise RuntimeError(f"LLM API 调用失败: {str(e)}") from e
+    
     async def close(self):
         """关闭客户端"""
         # OpenAI 客户端不需要显式关闭

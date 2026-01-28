@@ -103,6 +103,67 @@ export const chatAPI = {
   },
 
   /**
+   * 发送聊天消息（流式接口）
+   * 使用 fetch + ReadableStream 消费后端 StreamingResponse
+   */
+  sendMessageStream: async (
+    data: ChatRequest,
+    onChunk: (payload: { type: string; text?: string; conversation_id?: string; parent_id?: string }) => void
+  ): Promise<void> => {
+    const token = localStorage.getItem('access_token')
+    const response = await fetch(`${API_BASE_URL}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.body) {
+      throw new Error('后端未返回流数据')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      let index: number
+      // 按行拆分 JSON（后端以 \\n 作为分隔符）
+      while ((index = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, index).trim()
+        buffer = buffer.slice(index + 1)
+        if (!line) continue
+        try {
+          const payload = JSON.parse(line)
+          onChunk(payload)
+        } catch (e) {
+          // 忽略单行解析错误，避免中断整个流
+          // eslint-disable-next-line no-console
+          console.warn('解析流式数据失败:', e, line)
+        }
+      }
+    }
+
+    // 处理最后残留的 buffer
+    const rest = buffer.trim()
+    if (rest) {
+      try {
+        const payload = JSON.parse(rest)
+        onChunk(payload)
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('解析流式数据失败(尾部):', e, rest)
+      }
+    }
+  },
+
+  /**
    * 获取对话树
    */
   getConversationTree: async (conversationId: string): Promise<DialogueNodeBase> => {

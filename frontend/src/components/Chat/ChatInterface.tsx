@@ -18,6 +18,7 @@ const ChatInterface = () => {
   const [userMessages, setUserMessages] = useState<string[]>([])
   const [input, setInput] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(false)
+  const [hasFirstChunk, setHasFirstChunk] = useState<boolean>(false)
   const [error, setError] = useState<string>('')
   const [mindMapData, setMindMapData] = useState<MindMapGraph>({ nodes: [], edges: [] })
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true)
@@ -43,24 +44,87 @@ const ChatInterface = () => {
     const query = input.trim()
     setInput('')
     setError('')
-    setUserMessages(prev => [...prev, query])
     setLoading(true)
+    setHasFirstChunk(false)
+
+    // 先记录用户消息
+    setUserMessages(prev => [...prev, query])
+
+    // 为 AI 创建一条占位消息
+    const parentId = messages.length > 0 ? messages[messages.length - 1].conversation_id : null
+    const aiIndex = messages.length
+    setMessages(prev => [
+      ...prev,
+      {
+        answer: '',
+        fragments: [],
+        knowledge_triples: [],
+        suggestion: undefined,
+        conversation_id: '',
+        parent_id: parentId,
+      },
+    ])
 
     try {
-      const parentId = messages.length > 0 ? messages[messages.length - 1].conversation_id : null
-      const response = await chatAPI.sendMessage({
-        query,
-        parent_id: parentId,
-        ref_fragment_id: refFragmentId || null,
-        session_id: sessionId,
-      })
+      await chatAPI.sendMessageStream(
+        {
+          query,
+          parent_id: parentId,
+          ref_fragment_id: refFragmentId || null,
+          session_id: sessionId,
+        },
+        (payload: { type: string; text?: string; conversation_id?: string; parent_id?: string; answer?: string }) => {
+          // 处理流式增量
+          if (payload.type === 'meta' && payload.conversation_id) {
+            // 更新占位消息的 conversation_id
+            setMessages(prev => {
+              const next = [...prev]
+              const target = next[aiIndex]
+              if (target) {
+                next[aiIndex] = {
+                  ...target,
+                  conversation_id: payload.conversation_id as string,
+                }
+              }
+              return next
+            })
+          } else if (payload.type === 'delta' && payload.text) {
+            // 收到首个增量，隐藏“思考中”
+            setHasFirstChunk(true)
+            setMessages(prev => {
+              const next = [...prev]
+              const target = next[aiIndex]
+              if (target) {
+                next[aiIndex] = {
+                  ...target,
+                  answer: (target.answer || '') + payload.text,
+                }
+              }
+              return next
+            })
+          } else if (payload.type === 'full' && payload.answer) {
+            // 非流式划词追问路径：一次性完整返回
+            setMessages(prev => {
+              const next = [...prev]
+              next[aiIndex] = {
+                answer: payload.answer as string,
+                fragments: [],
+                knowledge_triples: [],
+                suggestion: undefined,
+                conversation_id: payload.conversation_id as string,
+                parent_id: payload.parent_id as string | null | undefined,
+              }
+              return next
+            })
+          }
+        }
+      )
 
-      setMessages(prev => [...prev, response])
-      
-      // 更新思维导图
-      if (response.conversation_id) {
+      // 流结束后，如果拿到了 conversation_id，则刷新思维导图
+      const finalMsg = (messages => messages[aiIndex])(messages)
+      if (finalMsg && finalMsg.conversation_id) {
         try {
-          const graphData = await mindMapAPI.getMindMap(response.conversation_id)
+          const graphData = await mindMapAPI.getMindMap(finalMsg.conversation_id)
           setMindMapData(graphData)
         } catch (err) {
           // 思维导图加载失败不影响主流程
@@ -70,11 +134,11 @@ const ChatInterface = () => {
     } catch (error: any) {
       console.error('发送消息失败:', error)
       setUserMessages(prev => prev.slice(0, -1))
-      
-      if (error.response?.status === 401) {
+
+      if (error?.response?.status === 401) {
         authAPI.logout()
         navigate('/login')
-      } else if (error.response?.status === 404) {
+      } else if (error?.response?.status === 404) {
         setError('聊天功能暂时不可用，请稍后再试')
       } else {
         setError('发送消息失败，请稍后再试')
@@ -350,34 +414,34 @@ const ChatInterface = () => {
               {/* AI 回答 */}
               <div style={aiMessageStyle}>
                 <div style={aiCardStyle}>
-                  <TextFragment
-                    content={msg.answer}
-                    fragments={msg.fragments || []}
-                    onFragmentSelect={handleFragmentSelect}
-                  />
+                  {msg.answer
+                    ? (
+                      <TextFragment
+                        content={msg.answer}
+                        fragments={msg.fragments || []}
+                        onFragmentSelect={handleFragmentSelect}
+                      />
+                    )
+                    : loading && !hasFirstChunk && index === messages.length - 1
+                      ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#6B7280' }}>
+                          <div style={{
+                            width: '16px',
+                            height: '16px',
+                            border: '2px solid #E5E7EB',
+                            borderTopColor: '#2563EB',
+                            borderRadius: '50%',
+                            animation: 'spin 1s linear infinite',
+                          }}
+                          />
+                          <span>思考中...</span>
+                        </div>
+                        )
+                      : null}
                 </div>
               </div>
             </div>
           ))}
-
-          {/* 加载状态 */}
-          {loading && (
-            <div style={aiMessageStyle}>
-              <div style={aiCardStyle}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#6B7280' }}>
-                  <div style={{
-                    width: '16px',
-                    height: '16px',
-                    border: '2px solid #E5E7EB',
-                    borderTopColor: '#2563EB',
-                    borderRadius: '50%',
-                    animation: 'spin 1s linear infinite',
-                  }} />
-                  <span>思考中...</span>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* 错误提示 */}
           {error && (

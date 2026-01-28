@@ -2,9 +2,12 @@
 聊天相关路由
 """
 import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
+
 from backend.api.schemas.request import ChatRequest
-from backend.api.schemas.response import AgentResponse, DialogueNodeBase, ErrorResponse
+from backend.api.schemas.response import DialogueNodeBase
 from backend.api.middleware.auth import get_current_user_id
 from backend.agent.orchestrator import AgentOrchestrator
 from backend.data.neo4j_client import neo4j_client
@@ -16,56 +19,71 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-@router.post("", response_model=AgentResponse)
+@router.post("")
 async def chat(
     request: ChatRequest,
-    user_id: str = Depends(get_current_user_id)
+    user_id: str = Depends(get_current_user_id),
 ):
     """
-    发送聊天消息（支持普通提问和划词追问）
-    
-    Args:
-        request: 聊天请求（包含 query, parent_id, ref_fragment_id, session_id）
-        user_id: 当前用户 ID
-        
-    Returns:
-        Agent 响应
+    发送聊天消息（支持普通提问和划词追问），使用 HTTP 流式返回结果。
     """
-    logger.info(f"收到聊天请求: user_id={user_id}, query={request.query[:50] if len(request.query) > 50 else request.query}...")
-    logger.info(f"请求详情: parent_id={request.parent_id}, ref_fragment_id={request.ref_fragment_id}, session_id={request.session_id}")
-    
+    logger.info(
+        "收到聊天请求: user_id=%s, query=%s...",
+        user_id,
+        request.query[:50] if len(request.query) > 50 else request.query,
+    )
+    logger.info(
+        "请求详情: parent_id=%s, ref_fragment_id=%s, session_id=%s",
+        request.parent_id,
+        request.ref_fragment_id,
+        request.session_id,
+    )
+
     try:
         logger.info("初始化 Orchestrator...")
         orchestrator = AgentOrchestrator()
         logger.info("Orchestrator 初始化成功")
-        
-        # 判断是否为划词追问
+
+        # 暂时对普通提问走流式，对划词追问走非流式一次性返回
         if request.ref_fragment_id:
-            logger.info("处理划词追问...")
+            logger.info("处理划词追问（非流式）...")
             response = await orchestrator.process_recursive_query(
                 user_id=user_id,
                 parent_id=request.parent_id or "",
                 fragment_id=request.ref_fragment_id,
-                query=request.query
-            )
-        else:
-            logger.info("处理普通提问...")
-            response = await orchestrator.process_query(
-                user_id=user_id,
                 query=request.query,
-                parent_id=request.parent_id,
-                session_id=request.session_id
             )
-        
-        logger.info(f"处理成功，conversation_id={response.conversation_id}")
-        return response
+            logger.info("递归追问处理完成，conversation_id=%s", response.conversation_id)
+            # 为兼容前端流式消费，这里也返回单条 JSON 行
+            async def single_chunk():
+                import json as _json
+
+                payload = {
+                    "type": "full",
+                    "answer": response.answer,
+                    "conversation_id": response.conversation_id,
+                    "parent_id": response.parent_id,
+                }
+                yield _json.dumps(payload, ensure_ascii=False) + "\n"
+
+            return StreamingResponse(single_chunk(), media_type="application/json")
+
+        logger.info("处理普通提问（流式）...")
+        token_stream = orchestrator.process_query_stream(
+            user_id=user_id,
+            query=request.query,
+            parent_id=request.parent_id,
+            session_id=request.session_id,
+        )
+
+        return StreamingResponse(token_stream, media_type="application/json")
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"处理请求时出错: {str(e)}", exc_info=True)
+        logger.error("处理请求时出错: %s", str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"处理请求时出错: {str(e)}"
+            detail=f"处理请求时出错: {str(e)}",
         )
 
 
