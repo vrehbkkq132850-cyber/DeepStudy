@@ -4,11 +4,12 @@ Agent 编排器
 """
 import uuid
 import logging
+import json
 from typing import Optional
 from backend.agent.llm_client import ModelScopeLLMClient
 from backend.agent.intent_router import IntentRouter, IntentType
 from backend.agent.strategies import DerivationStrategy, CodeStrategy, ConceptStrategy
-from backend.agent.prompts.system_prompts import RECURSIVE_PROMPT
+from backend.agent.prompts.system_prompts import RECURSIVE_PROMPT, KNOWLEDGE_EXTRACTION_PROMPT
 from backend.api.schemas.response import AgentResponse
 from backend.data.neo4j_client import neo4j_client
 from backend.config import settings
@@ -56,6 +57,65 @@ class AgentOrchestrator:
             IntentType.CONCEPT: ConceptStrategy(self.llm),
         }
         logger.info("Orchestrator 初始化完成")
+    
+    async def extract_knowledge_triples(self, query: str, answer: str, conversation_id: str, user_id: str) -> list:
+        """
+        提取知识三元组并保存到Neo4j
+        
+        Args:
+            query: 用户问题
+            answer: AI回答
+            conversation_id: 对话ID
+            user_id: 用户ID
+            
+        Returns:
+            知识三元组列表
+        """
+        try:
+            # 构建知识提取提示词
+            prompt = KNOWLEDGE_EXTRACTION_PROMPT.format(query=query, answer=answer)
+            
+            # 调用LLM提取知识三元组
+            logger.info("开始提取知识三元组...")
+            response_text = await self.llm.acomplete(prompt)
+            response_content = response_text.text if hasattr(response_text, 'text') else str(response_text)
+            
+            # 解析JSON响应
+            try:
+                # 尝试提取JSON部分
+                json_start = response_content.find('[')
+                json_end = response_content.rfind(']') + 1
+                if json_start >= 0 and json_end > json_start:
+                    json_str = response_content[json_start:json_end]
+                    knowledge_triples = json.loads(json_str)
+                else:
+                    knowledge_triples = json.loads(response_content)
+                
+                logger.info(f"成功提取 {len(knowledge_triples)} 个知识三元组")
+                
+                # 保存知识三元组到Neo4j
+                for triple in knowledge_triples:
+                    subject = triple.get("subject", "")
+                    relation = triple.get("relation", "")
+                    obj = triple.get("object", "")
+                    
+                    if subject and relation and obj:
+                        await neo4j_client.save_knowledge_triple(
+                            subject=subject,
+                            relation=relation,
+                            obj=obj,
+                            user_id=user_id,
+                            conversation_id=conversation_id
+                        )
+                        logger.info(f"保存知识三元组: {subject} -> {relation} -> {obj}")
+                
+                return knowledge_triples
+            except json.JSONDecodeError as e:
+                logger.error(f"解析知识三元组JSON失败: {e}, 响应内容: {response_content}")
+                return []
+        except Exception as e:
+            logger.error(f"提取知识三元组失败: {str(e)}", exc_info=True)
+            return []
     
     async def process_query(
         self,
@@ -143,9 +203,16 @@ class AgentOrchestrator:
             # 严格模式：Neo4j 失败则整个请求失败
             raise RuntimeError(f"保存对话到 Neo4j 失败: {str(e)}") from e
         
-        # TODO: 提取知识三元组
-        # TODO: 提取文本片段
-        # TODO: 生成思维导图数据
+        # 提取知识三元组并保存到Neo4j
+        logger.info("开始提取知识三元组...")
+        knowledge_triples = await self.extract_knowledge_triples(
+            query=query,
+            answer=response.answer,
+            conversation_id=conversation_id,
+            user_id=user_id
+        )
+        response.knowledge_triples = knowledge_triples
+        logger.info(f"知识三元组提取完成，共 {len(knowledge_triples)} 个")
         
         return response
     
@@ -168,9 +235,7 @@ class AgentOrchestrator:
         Returns:
             Agent 响应
         """
-        # TODO: 获取父对话上下文
-        # TODO: 获取片段内容
-        
+              
         # 使用递归提示词
         prompt = f"{RECURSIVE_PROMPT}\n\n用户追问: {query}\n\n请针对性地回答："
         
