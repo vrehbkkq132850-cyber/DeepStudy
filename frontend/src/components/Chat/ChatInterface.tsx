@@ -1,16 +1,27 @@
+<<<<<<< HEAD
 import { useState, useEffect, useRef } from 'react'
+=======
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
 import { useNavigate } from 'react-router-dom'
 import { authAPI, chatAPI, mindMapAPI } from '../../services/api'
 import { AgentResponse, MindMapGraph } from '../../types/api'
 import TextFragment from '../Markdown/TextFragment'
 import KnowledgeGraph from '../MindMap/KnowledgeGraph'
 
+<<<<<<< HEAD
 /**
  * 聊天界面主组件
  * 包含对话展示、输入框、思维导图侧边栏
  */
 const ChatInterface = () => {
   const navigate = useNavigate()
+=======
+const ChatInterface = () => {
+  const navigate = useNavigate()
+  
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   
@@ -23,6 +34,7 @@ const ChatInterface = () => {
   const [mindMapData, setMindMapData] = useState<MindMapGraph>({ nodes: [], edges: [] })
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true)
   const [sessionId] = useState<string>(() => `session_${Date.now()}`)
+<<<<<<< HEAD
   const [questionModalOpen, setQuestionModalOpen] = useState(false)
   const [selectedFragmentId, setSelectedFragmentId] = useState<string>('')
   const [selectedText, setSelectedText] = useState<string>('')
@@ -43,6 +55,53 @@ const ChatInterface = () => {
    * 发送消息（支持普通提问和划词追问）
    */
   const handleSend = async (refFragmentId?: string, selectedText?: string) => {
+=======
+
+  // ==========================================
+  // 👇👇👇 稳健滚动逻辑 (使用 requestAnimationFrame) 👇👇👇
+  // ==========================================
+
+  const scrollToBottom = (behavior: 'auto' | 'smooth' = 'smooth') => {
+    if (scrollContainerRef.current) {
+        const { scrollHeight, clientHeight } = scrollContainerRef.current
+        // 直接操作 scrollTop 比 scrollIntoView 更稳
+        scrollContainerRef.current.scrollTo({
+            top: scrollHeight - clientHeight,
+            behavior: behavior
+        })
+    }
+  }
+
+  // 1. 新消息加入时，平滑滚动
+  useEffect(() => {
+    // 只有当是新消息（非流式更新中）或者刚开始流式输出时滚动
+    if (!loading || (loading && !hasFirstChunk)) {
+        scrollToBottom('smooth')
+    }
+  }, [messages.length, loading, hasFirstChunk])
+
+  // 2. AI 打字时，智能吸附
+  useEffect(() => {
+    if (loading && hasFirstChunk) {
+        const container = scrollContainerRef.current
+        if (container) {
+            // 计算距离底部的距离
+            const distance = container.scrollHeight - container.scrollTop - container.clientHeight
+            
+            // 如果用户正在看底部 (距离 < 100px)，则瞬间吸附，防止抖动
+            if (distance < 100) {
+                requestAnimationFrame(() => {
+                    scrollToBottom('auto')
+                })
+            }
+        }
+    }
+  }, [messages]) 
+
+  // ==========================================
+
+  const handleSend = async (refFragmentId?: string) => {
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
     if (!input.trim() || loading) return
 
     const query = input.trim()
@@ -51,12 +110,22 @@ const ChatInterface = () => {
     setLoading(true)
     setHasFirstChunk(false)
 
+<<<<<<< HEAD
     // 先记录用户消息
     setUserMessages(prev => [...prev, query])
 
     // 为 AI 创建一条占位消息
     const parentId = messages.length > 0 ? messages[messages.length - 1].conversation_id : null
     const aiIndex = messages.length
+=======
+    setUserMessages(prev => [...prev, query])
+
+    const parentId = messages.length > 0 ? messages[messages.length - 1].conversation_id : null
+    const aiIndex = messages.length
+    
+    let currentConversationId = ''; 
+
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
     setMessages(prev => [
       ...prev,
       {
@@ -75,6 +144,7 @@ const ChatInterface = () => {
           query,
           parent_id: parentId,
           ref_fragment_id: refFragmentId || null,
+<<<<<<< HEAD
           selected_text: selectedText || null,
           session_id: sessionId,
         },
@@ -90,10 +160,26 @@ const ChatInterface = () => {
                   ...target,
                   conversation_id: payload.conversation_id as string,
                 }
+=======
+          session_id: sessionId,
+        },
+        (payload: { type: string; text?: string; conversation_id?: string; parent_id?: string; answer?: string }) => {
+          
+          if (payload.conversation_id) {
+            currentConversationId = payload.conversation_id;
+          }
+
+          if (payload.type === 'meta' && payload.conversation_id) {
+            setMessages(prev => {
+              const next = [...prev]
+              if (next[aiIndex]) {
+                next[aiIndex] = { ...next[aiIndex], conversation_id: payload.conversation_id as string }
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
               }
               return next
             })
           } else if (payload.type === 'delta' && payload.text) {
+<<<<<<< HEAD
             // 收到首个增量，隐藏“思考中”
             setHasFirstChunk(true)
             setMessages(prev => {
@@ -104,11 +190,21 @@ const ChatInterface = () => {
                   ...target,
                   answer: (target.answer || '') + payload.text,
                 }
+=======
+            setHasFirstChunk(true)
+            setMessages(prev => {
+              const next = [...prev]
+              if (next[aiIndex]) {
+                next[aiIndex] = { ...next[aiIndex], answer: (next[aiIndex].answer || '') + payload.text }
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
               }
               return next
             })
           } else if (payload.type === 'full' && payload.answer) {
+<<<<<<< HEAD
             // 非流式划词追问路径：一次性完整返回
+=======
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
             setMessages(prev => {
               const next = [...prev]
               next[aiIndex] = {
@@ -125,6 +221,7 @@ const ChatInterface = () => {
         }
       )
 
+<<<<<<< HEAD
       // 流结束后，如果拿到了 conversation_id，则刷新思维导图
       // 直接使用外部的messages状态，确保获取到最新的消息
       const finalMsg = messages[aiIndex]
@@ -143,6 +240,20 @@ const ChatInterface = () => {
         console.log('未获取到conversation_id，无法加载知识图谱')
         console.log('当前消息:', finalMsg)
       }
+=======
+      if (currentConversationId) {
+        try {
+          const graphData = await mindMapAPI.getMindMap(currentConversationId)
+          if (graphData && graphData.nodes && graphData.nodes.length > 0) {
+            setMindMapData(graphData)
+            if (!sidebarOpen) setSidebarOpen(true);
+          }
+        } catch (err) {
+          console.warn('思维导图加载失败:', err)
+        }
+      }
+
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
     } catch (error: any) {
       console.error('发送消息失败:', error)
       setUserMessages(prev => prev.slice(0, -1))
@@ -160,6 +271,7 @@ const ChatInterface = () => {
     }
   }
 
+<<<<<<< HEAD
   /**
    * 处理片段选择（划词追问）
    */
@@ -197,6 +309,18 @@ const ChatInterface = () => {
   /**
    * 处理键盘事件
    */
+=======
+  const handleFragmentSelect = (fragmentId: string) => {
+    const query = prompt('请输入你的问题:')
+    if (query && messages.length > 0) {
+      setInput(query)
+      setTimeout(() => {
+        handleSend(fragmentId)
+      }, 0)
+    }
+  }
+
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -204,20 +328,33 @@ const ChatInterface = () => {
     }
   }
 
+<<<<<<< HEAD
   /**
    * 登出
    */
+=======
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
   const handleLogout = () => {
     authAPI.logout()
     navigate('/login')
   }
 
+<<<<<<< HEAD
   // 样式常量
+=======
+  // 样式定义
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
   const containerStyle: React.CSSProperties = {
     position: 'relative',
     display: 'flex',
     height: '100vh',
+<<<<<<< HEAD
     backgroundColor: 'transparent',
+=======
+    width: '100vw', // 确保占满宽
+    backgroundColor: 'transparent',
+    overflow: 'hidden'
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
   }
 
   const backgroundStyle: React.CSSProperties = {
@@ -236,6 +373,10 @@ const ChatInterface = () => {
     zIndex: -1,
   }
 
+<<<<<<< HEAD
+=======
+  // 👇👇👇 修复核心：显式指定高度，强制撑开！ 👇👇👇
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
   const mainAreaStyle: React.CSSProperties = {
     flex: 1,
     display: 'flex',
@@ -247,6 +388,10 @@ const ChatInterface = () => {
     overflow: 'hidden',
     position: 'relative',
     zIndex: 1,
+<<<<<<< HEAD
+=======
+    height: 'calc(100vh - 32px)' // 👈 这一行是救命稻草！
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
   }
 
   const headerStyle: React.CSSProperties = {
@@ -256,6 +401,10 @@ const ChatInterface = () => {
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: 'white',
+<<<<<<< HEAD
+=======
+    flexShrink: 0,
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
   }
 
   const messagesAreaStyle: React.CSSProperties = {
@@ -263,6 +412,11 @@ const ChatInterface = () => {
     overflowY: 'auto',
     padding: '24px',
     backgroundColor: 'rgba(249, 250, 251, 0.6)',
+<<<<<<< HEAD
+=======
+    scrollBehavior: 'auto',
+    minHeight: 0 // 防止 Flex 子项溢出
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
   }
 
   const userMessageStyle: React.CSSProperties = {
@@ -304,6 +458,10 @@ const ChatInterface = () => {
     display: 'flex',
     gap: '12px',
     alignItems: 'flex-end',
+<<<<<<< HEAD
+=======
+    flexShrink: 0,
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
   }
 
   const textareaStyle: React.CSSProperties = {
@@ -346,6 +504,10 @@ const ChatInterface = () => {
     boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
     position: 'relative',
     zIndex: 1,
+<<<<<<< HEAD
+=======
+    height: 'calc(100vh - 32px)' // 侧边栏也加上这个高度，保持对齐
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
   }
 
   const errorStyle: React.CSSProperties = {
@@ -359,12 +521,18 @@ const ChatInterface = () => {
 
   return (
     <div style={containerStyle}>
+<<<<<<< HEAD
       {/* 背景层（模糊） */}
       <div style={backgroundStyle} />
 
       {/* 主聊天区域 */}
       <div style={mainAreaStyle}>
         {/* 头部 */}
+=======
+      <div style={backgroundStyle} />
+
+      <div style={mainAreaStyle}>
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
         <div style={headerStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <h1 style={{ fontSize: '20px', fontWeight: 600, color: '#111827', margin: 0 }}>
@@ -386,12 +554,17 @@ const ChatInterface = () => {
                 fontSize: '14px',
                 color: '#111827',
               }}
+<<<<<<< HEAD
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = '#F3F4F6'
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = 'white'
               }}
+=======
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F3F4F6'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
             >
               {sidebarOpen ? '隐藏图谱' : '显示图谱'}
             </button>
@@ -406,20 +579,30 @@ const ChatInterface = () => {
                 fontSize: '14px',
                 color: '#111827',
               }}
+<<<<<<< HEAD
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = '#F3F4F6'
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = 'white'
               }}
+=======
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F3F4F6'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
             >
               登出
             </button>
           </div>
         </div>
 
+<<<<<<< HEAD
         {/* 消息列表 */}
         <div style={messagesAreaStyle}>
+=======
+        {/* 绑定滚动容器 Ref */}
+        <div style={messagesAreaStyle} ref={scrollContainerRef}>
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
           {messages.length === 0 && (
             <div style={{
               textAlign: 'center',
@@ -435,7 +618,10 @@ const ChatInterface = () => {
 
           {messages.map((msg, index) => (
             <div key={index}>
+<<<<<<< HEAD
               {/* 用户消息 */}
+=======
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
               {userMessages[index] && (
                 <div style={userMessageStyle}>
                   <div style={userBubbleStyle}>
@@ -444,19 +630,29 @@ const ChatInterface = () => {
                 </div>
               )}
 
+<<<<<<< HEAD
               {/* AI 回答 */}
               <div style={aiMessageStyle}>
                 <div style={aiCardStyle}>
                   {msg.answer
                     ? (
+=======
+              <div style={aiMessageStyle}>
+                <div style={aiCardStyle}>
+                  {msg.answer ? (
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
                       <TextFragment
                         content={msg.answer}
                         fragments={msg.fragments || []}
                         onFragmentSelect={handleFragmentSelect}
                       />
+<<<<<<< HEAD
                     )
                     : loading && !hasFirstChunk && index === messages.length - 1
                       ? (
+=======
+                    ) : loading && !hasFirstChunk && index === messages.length - 1 ? (
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#6B7280' }}>
                           <div style={{
                             width: '16px',
@@ -465,28 +661,42 @@ const ChatInterface = () => {
                             borderTopColor: '#2563EB',
                             borderRadius: '50%',
                             animation: 'spin 1s linear infinite',
+<<<<<<< HEAD
                           }}
                           />
                           <span>思考中...</span>
                         </div>
                         )
                       : null}
+=======
+                          }} />
+                          <span>思考中...</span>
+                        </div>
+                    ) : null}
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
                 </div>
               </div>
             </div>
           ))}
 
+<<<<<<< HEAD
           {/* 错误提示 */}
           {error && (
             <div style={errorStyle} role="alert">
               {error}
             </div>
           )}
+=======
+          {error && <div style={errorStyle} role="alert">{error}</div>}
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
 
           <div ref={messagesEndRef} />
         </div>
 
+<<<<<<< HEAD
         {/* 输入区域 */}
+=======
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
         <div style={inputAreaStyle}>
           <textarea
             ref={inputRef}
@@ -517,6 +727,7 @@ const ChatInterface = () => {
             disabled={loading || !input.trim()}
             style={buttonStyle}
             onMouseEnter={(e) => {
+<<<<<<< HEAD
               if (!loading && input.trim()) {
                 e.currentTarget.style.backgroundColor = '#1D4ED8'
               }
@@ -524,13 +735,21 @@ const ChatInterface = () => {
             onMouseLeave={(e) => {
               e.currentTarget.style.backgroundColor = '#2563EB'
             }}
+=======
+              if (!loading && input.trim()) e.currentTarget.style.backgroundColor = '#1D4ED8'
+            }}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#2563EB'}
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
           >
             {loading ? '发送中...' : '发送'}
           </button>
         </div>
       </div>
 
+<<<<<<< HEAD
       {/* 思维导图侧边栏 */}
+=======
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
       {sidebarOpen && (
         <div style={sidebarStyle}>
           <div style={{
@@ -553,12 +772,17 @@ const ChatInterface = () => {
                 fontSize: '20px',
                 color: '#6B7280',
               }}
+<<<<<<< HEAD
               onMouseEnter={(e) => {
                 e.currentTarget.style.color = '#111827'
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.color = '#6B7280'
               }}
+=======
+              onMouseEnter={(e) => e.currentTarget.style.color = '#111827'}
+              onMouseLeave={(e) => e.currentTarget.style.color = '#6B7280'}
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
             >
               ×
             </button>
@@ -568,6 +792,7 @@ const ChatInterface = () => {
           </div>
         </div>
       )}
+<<<<<<< HEAD
 
       {/* 追问弹窗 */}
       {questionModalOpen && (
@@ -714,8 +939,14 @@ const ChatInterface = () => {
           </div>
         </div>
       )}
+=======
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
     </div>
   )
 }
 
+<<<<<<< HEAD
 export default ChatInterface
+=======
+export default ChatInterface
+>>>>>>> b719fdcda5e46ee55a08988e23b2acd7d6544c45
