@@ -5,11 +5,11 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.config import settings
-# from backend.api.routes import auth, chat, mindmap
+from backend.api.routes import auth, chat, mindmap, knowledge
 from backend.api.routes import auth, chat
 from backend.data.sqlite_db import init_db
 import asyncio
-from backend.api.routes import knowledge
+
 
 # 配置日志
 logging.basicConfig(
@@ -42,7 +42,7 @@ app.add_middleware(
 # 注册路由
 app.include_router(auth.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
-# app.include_router(mindmap.router)
+app.include_router(mindmap.router, prefix="/api")
 
 
 @app.on_event("startup")
